@@ -24,6 +24,11 @@ $ TORCH_CUDA_ARCH_LIST=8.0 GROUPED_GEMM_CUTLASS=1 pip install .
 See [this comment](https://github.com/tgale96/grouped_gemm/pull/14#issuecomment-2211362572)
 for some performance measurements on A100 and H100.
 
+# Benchmark example
+```python
+python benchmark.py
+```
+
 # Upcoming features
 
 * Hopper-optimized grouped GEMM kernels.
