@@ -1,5 +1,5 @@
-from grouped_gemm import backend
 import torch
+from grouped_gemm import backend
 
 
 class GroupedGemm(torch.autograd.Function):

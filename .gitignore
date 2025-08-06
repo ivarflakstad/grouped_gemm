@@ -1,5 +1,5 @@
-*~
 build
 *.egg-info
-dist
-__pycache__
+.ropeproject
+*.hip
+*_hip.cuh

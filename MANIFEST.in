@@ -1,6 +1,0 @@
-recursive-include csrc *.h
-recursive-include csrc *.cu
-recursive-include csrc *.cuh
-
-recursive-include third_party/cutlass/include *.h
-recursive-include third_party/cutlass/include *.hpp

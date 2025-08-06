@@ -1,76 +1,79 @@
+from setuptools import setup
+from torch.utils.cpp_extension import BuildExtension, CUDAExtension
+import torch
 import os
-from pathlib import Path
 
-from setuptools import find_packages, setup
+# Check if ROCm is available
+def is_rocm_available():
+    return torch.version.hip is not None and torch.cuda.is_available()
 
-try:
-    import torch
-    from torch.utils.cpp_extension import BuildExtension, CUDAExtension
-except ModuleNotFoundError as e:
-    raise ModuleNotFoundError("No module named 'torch'. `torch` is required to install `grouped_gemm`.",) from e
+# Get ROCm/HIP paths
+def get_rocm_paths():
+    rocm_path = os.environ.get('ROCM_PATH', '/opt/rocm')
+    hip_path = os.environ.get('HIP_PATH', f'{rocm_path}/hip')
+    return rocm_path, hip_path
 
-if os.environ.get("TORCH_CUDA_ARCH_LIST"):
-    # Let PyTorch builder to choose device to target for.
-    device_capability = ""
-else:
-    device_capability = torch.cuda.get_device_capability()
-    device_capability = f"{device_capability[0]}{device_capability[1]}"
+rocm_path, hip_path = get_rocm_paths()
 
-cwd = Path(os.path.dirname(os.path.abspath(__file__)))
-
-nvcc_flags = [
-    "-std=c++17",  # NOTE: CUTLASS requires c++17
+# Library directories
+library_dirs = [
+    f'{rocm_path}/lib',
+    f'{hip_path}/lib',
+    f'{rocm_path}/lib64'
 ]
 
-if device_capability:
-    nvcc_flags.extend([
-        f"--generate-code=arch=compute_{device_capability},code=sm_{device_capability}",
-    ])
-
-if os.environ.get("GROUPED_GEMM_CUTLASS", "0") == "1":
-    nvcc_flags.extend(["-DGROUPED_GEMM_CUTLASS"])
-
-ext_modules = [
-    CUDAExtension(
-        "grouped_gemm_backend",
-        ["csrc/ops.cu", "csrc/grouped_gemm.cu"],
-        include_dirs = [
-            f"{cwd}/third_party/cutlass/include/",
-            f"{cwd}/csrc"
-        ],
-        extra_compile_args={
-            "cxx": [
-                "-fopenmp", "-fPIC", "-Wno-strict-aliasing"
-            ],
-            "nvcc": nvcc_flags,
-        }
-    )
-]
-
-extra_deps = {}
-
-extra_deps['dev'] = [
-    'absl-py',
-]
-
-extra_deps['all'] = set(dep for deps in extra_deps.values() for dep in deps)
+# Compiler and linker flags for ROCm/HIP
+extra_compile_args = {
+    'cxx': [
+        '-O1',
+        '-std=c++17',
+        '-fPIC',
+        f'-I{rocm_path}/include',
+        f'-I{hip_path}/include',
+        f'-I{rocm_path}/include/ck',
+        '-D__HIP_PLATFORM_AMD__',
+        '-DUSE_ROCM',
+        '-U__HIP_NO_HALF_CONVERSIONS__',
+        '-U__HIP_NO_HALF_OPERATORS__'
+    ],
+    'nvcc': [
+        '-O1',
+        '--std=c++17',
+        f'-I{rocm_path}/include',
+        f'-I{hip_path}/include',
+        f'-I{rocm_path}/include/ck',
+        '-D__HIP_PLATFORM_AMD__',
+        '-DUSE_ROCM',
+        '--offload-arch=gfx942',
+        '-U__HIP_NO_HALF_CONVERSIONS__',
+        '-U__HIP_NO_HALF_OPERATORS__'
+    ]
+}
 
 setup(
-    name="grouped_gemm",
-    version="0.3.0",
-    author="Trevor Gale",
-    author_email="tgale@stanford.edu",
-    description="Grouped GEMM",
-    long_description=open('README.md').read(),
-    long_description_content_type='text/markdown',
-    url="https://github.com/tgale06/grouped_gemm",
-    classifiers=[
-        "Programming Language :: Python :: 3",
-        "License :: OSI Approved :: BSD License",
-        "Operating System :: Unix",
+    name='grouped_gemm',
+    ext_modules=[
+        CUDAExtension('grouped_gemm_backend', [
+            'csrc/grouped_gemm.cu',
+        ],
+        include_dirs=[
+            f'{rocm_path}/include',
+            f'{hip_path}/include',
+            f'{rocm_path}/include/ck',
+            f'{rocm_path}/include/ck_tile',
+        ] + torch.utils.cpp_extension.include_paths(),
+        #libraries=libraries,
+        library_dirs=library_dirs,
+        extra_compile_args=extra_compile_args,
+        extra_link_args=[
+            #f'-L{rocm_path}/lib',
+            #f'-L{rocm_path}/lib64',
+            #f'-L{hip_path}/lib',
+            #'-Wl,-rpath,' + f'{rocm_path}/lib',
+            #'-Wl,-rpath,' + f'{rocm_path}/lib64'
+        ])
     ],
-    packages=find_packages(),
-    ext_modules=ext_modules,
-    cmdclass={"build_ext": BuildExtension},
-    extras_require=extra_deps,
+    cmdclass={
+        'build_ext': BuildExtension
+    }
 )
